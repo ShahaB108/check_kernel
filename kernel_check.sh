@@ -1,8 +1,8 @@
 #!/bin/bash
-# CVE-2026-31431 Kernel Checker + Smart Recommendations
-# For AlmaLinux / CloudLinux
+# CVE-2026-31431 Kernel Checker + Boot Safety Features
+# Includes /boot usage and initramfs validation
 
-echo "=== CVE-2026-31431 Kernel Checker + Boot Status ==="
+echo "=== CVE-2026-31431 Kernel Checker + Boot Safety ==="
 echo "Current time: $(date)"
 echo
 
@@ -27,13 +27,12 @@ echo "Detected OS        : $NAME $VERSION_ID"
 echo "Required minimum   : $MIN_KERNEL"
 echo
 
-# Version comparison
+# Version comparison function
 version_ge() {
     printf '%s\n%s\n' "$2" "$1" | sort -V | head -n1 | grep -q "^$2$"
     return $?
 }
 
-# Checks
 RUNNING_OK=$(version_ge "$RUNNING_KERNEL" "$MIN_KERNEL" && echo true || echo false)
 
 echo "=== Status ==="
@@ -54,6 +53,26 @@ rpm -qa kernel --qf '%{VERSION}-%{RELEASE}.%{ARCH}\n' 2>/dev/null | sort -V | wh
 done
 
 echo
+echo "=== /boot Disk Usage (Critical for Kernel Updates) ==="
+if mountpoint -q /boot; then
+    BOOT_USAGE=$(df -h /boot | awk 'NR==2 {print $5}' | sed 's/%//')
+    BOOT_AVAIL=$(df -h /boot | awk 'NR==2 {print $4}')
+    BOOT_TOTAL=$(df -h /boot | awk 'NR==2 {print $2}')
+    echo "Usage : ${BOOT_USAGE}%   |   Available: ${BOOT_AVAIL} / ${BOOT_TOTAL}"
+    
+    if [ "$BOOT_USAGE" -ge 85 ]; then
+        echo "❌ CRITICAL: /boot is almost full! Risk of kernel panic."
+    elif [ "$BOOT_USAGE" -ge 70 ]; then
+        echo "⚠️  Warning: /boot usage is high."
+    else
+        echo "✅ /boot has enough space."
+    fi
+else
+    echo "⚠️  /boot is not a separate mountpoint (checking /)"
+    df -h /
+fi
+
+echo
 echo "=== Default Boot Kernel ==="
 if command -v grubby >/dev/null 2>&1; then
     DEFAULT_KERNEL=$(grubby --default-kernel 2>/dev/null)
@@ -70,30 +89,47 @@ if command -v grubby >/dev/null 2>&1; then
 fi
 
 echo
+echo "=== Initramfs Check for Newest Kernel ==="
+NEWEST_KERNEL=$(rpm -qa kernel --qf '%{VERSION}-%{RELEASE}.%{ARCH}\n' 2>/dev/null | sort -V | tail -1)
+if [ -n "$NEWEST_KERNEL" ]; then
+    echo "Newest installed   : $NEWEST_KERNEL"
+    if ls /boot/initramfs-${NEWEST_KERNEL}.img >/dev/null 2>&1; then
+        INITRAMFS_SIZE=$(ls -sh /boot/initramfs-${NEWEST_KERNEL}.img 2>/dev/null | awk '{print $1}')
+        echo "✅ Initramfs exists (${INITRAMFS_SIZE})"
+    else
+        echo "❌ Initramfs missing for newest kernel!"
+        echo "   Run: sudo dracut -f /boot/initramfs-${NEWEST_KERNEL}.img ${NEWEST_KERNEL}"
+    fi
+fi
+
+echo
 echo "=== Recommendations ==="
 
 if [ "$RUNNING_OK" = true ] && version_ge "$DEFAULT_VERSION" "$MIN_KERNEL"; then
     echo "🎉 Your system is fully protected!"
-    echo "   No reboot needed."
-    echo
-    echo "Optional cleanup (remove old vulnerable kernels):"
-    echo "   sudo dnf remove \$(rpm -qa kernel | grep -E '4.18.0-553\.(83|89)')"
+    echo "   No reboot needed at this moment."
 else
-    if [ "$RUNNING_OK" = false ]; then
-        echo "• Update kernel:"
-        echo "  sudo dnf update kernel --enablerepo=*-testing"
-        echo "  or for CloudLinux:"
-        echo "  sudo dnf update 'kernel-lts*' --enablerepo=cloudlinux-updates-testing"
-    fi
+    echo "• Update kernel:"
+    echo "  sudo dnf update kernel --enablerepo=*-testing"
+    echo "  CloudLinux LTS: sudo dnf update 'kernel-lts*' --enablerepo=cloudlinux-updates-testing"
+fi
 
-    if ! version_ge "$DEFAULT_VERSION" "$MIN_KERNEL"; then
-        echo "• Set newest kernel as default:"
-        echo "  sudo grubby --set-default=/boot/vmlinuz-\$(rpm -qa kernel --qf '%{VERSION}-%{RELEASE}' | sort -V | tail -1)"
-    fi
+if [ -n "$DEFAULT_VERSION" ] && ! version_ge "$DEFAULT_VERSION" "$MIN_KERNEL"; then
+    echo "• Set newest kernel as default:"
+    echo "  sudo grubby --set-default=/boot/vmlinuz-\$(rpm -qa kernel --qf '%{VERSION}-%{RELEASE}' | sort -V | tail -1)"
+fi
 
-    echo "• Reboot the server"
-    echo "• Run this script again after reboot to confirm"
+# Space warning
+if [ "$BOOT_USAGE" -ge 70 ]; then
+    echo "• ⚠️  Clean /boot before updating:"
+    echo "  sudo package-cleanup --oldkernels --count=2"
+    echo "  or manually remove old kernels"
+fi
+
+if [ "$RUNNING_OK" = false ] || ! version_ge "$DEFAULT_VERSION" "$MIN_KERNEL"; then
+    echo "• Reboot after making changes"
+    echo "• Run this script again after reboot"
 fi
 
 echo
-echo "Note: You can keep old kernels for fallback, or remove them for cleanup."
+echo "Tip: Keep at least 200-300MB free in /boot to avoid kernel panic."
