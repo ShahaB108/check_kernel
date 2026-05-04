@@ -1,5 +1,5 @@
 #!/bin/bash
-# CVE-2026-31431 Kernel Checker + Boot Safety (Colored + Uptime)
+# CVE-2026-31431 Kernel Checker + Boot Safety (Fixed)
 
 # Colors
 RED='\e[31m'
@@ -13,9 +13,10 @@ echo -e "${CYAN}=== CVE-2026-31431 Kernel Checker + Boot Safety ===${RESET}"
 echo -e "Current time : $(date)"
 echo
 
-# Uptime Check
+# === Uptime Check (Fixed) ===
 UPTIME=$(uptime -p)
-UPTIME_SEC=$(awk '{print $1}' /proc/uptime)
+# Safely get uptime in days
+UPTIME_SEC=$(awk '{print int($1)}' /proc/uptime)
 UPTIME_DAYS=$((UPTIME_SEC / 86400))
 
 echo -e "${CYAN}Uptime           :${RESET} $UPTIME (${UPTIME_DAYS} days)"
@@ -72,8 +73,8 @@ done
 
 echo
 echo -e "${CYAN}=== /boot Disk Usage ===${RESET}"
-if mountpoint -q /boot; then
-    BOOT_USAGE=$(df -h /boot | awk 'NR==2 {print $5}' | sed 's/%//')
+if mountpoint -q /boot 2>/dev/null; then
+    BOOT_USAGE=$(df /boot | awk 'NR==2 {print $5}' | sed 's/%//')
     BOOT_AVAIL=$(df -h /boot | awk 'NR==2 {print $4}')
     BOOT_TOTAL=$(df -h /boot | awk 'NR==2 {print $2}')
     echo "Usage     : ${BOOT_USAGE}%   |   Free: ${BOOT_AVAIL} / ${BOOT_TOTAL}"
@@ -86,7 +87,7 @@ if mountpoint -q /boot; then
         echo -e "${GREEN}✅ /boot has enough space${RESET}"
     fi
 else
-    echo -e "${YELLOW}⚠️  /boot is not separate mount${RESET}"
+    echo -e "${YELLOW}⚠️  /boot is not a separate mountpoint (using root /)${RESET}"
     df -h /
 fi
 
@@ -116,35 +117,30 @@ if [ -n "$NEWEST_KERNEL" ]; then
         echo -e "${GREEN}✅ Initramfs exists (${SIZE})${RESET}"
     else
         echo -e "${RED}❌ Initramfs missing!${RESET}"
-        echo "   Fix with: sudo dracut -f /boot/initramfs-${NEWEST_KERNEL}.img ${NEWEST_KERNEL}"
+        echo "   Fix: sudo dracut -f /boot/initramfs-${NEWEST_KERNEL}.img ${NEWEST_KERNEL}"
     fi
 fi
 
 echo
 echo -e "${CYAN}=== Recommendations ===${RESET}"
 
-if [ "$RUNNING_OK" = true ] && version_ge "$DEFAULT_VERSION" "$MIN_KERNEL" && [ "$BOOT_USAGE" -lt 85 ]; then
-    echo -e "${GREEN}🎉 System is fully protected and safe!${RESET}"
-    echo "   No action or reboot needed right now."
+if [ "$RUNNING_OK" = true ] && version_ge "$DEFAULT_VERSION" "$MIN_KERNEL"; then
+    echo -e "${GREEN}🎉 System is fully protected!${RESET}"
+    echo "   No reboot needed right now."
 else
     if [ "$RUNNING_OK" = false ]; then
-        echo -e "${YELLOW}• Update the kernel:${RESET}"
+        echo -e "${YELLOW}• Update kernel:${RESET}"
         echo "  sudo dnf update kernel --enablerepo=*-testing"
-        echo "  CloudLinux: sudo dnf update 'kernel-lts*' --enablerepo=cloudlinux-updates-testing"
+        echo "  CloudLinux LTS: sudo dnf update 'kernel-lts*' --enablerepo=cloudlinux-updates-testing"
     fi
 
-    if ! version_ge "$DEFAULT_VERSION" "$MIN_KERNEL"; then
+    if [ -n "$DEFAULT_VERSION" ] && ! version_ge "$DEFAULT_VERSION" "$MIN_KERNEL"; then
         echo -e "${YELLOW}• Set newest kernel as default:${RESET}"
         echo "  sudo grubby --set-default=/boot/vmlinuz-\$(rpm -qa kernel --qf '%{VERSION}-%{RELEASE}' | sort -V | tail -1)"
     fi
 
-    if [ "$BOOT_USAGE" -ge 70 ]; then
-        echo -e "${RED}• Clean /boot before any update:${RESET}"
-        echo "  sudo package-cleanup --oldkernels --count=2"
-    fi
-
-    echo -e "${YELLOW}• Reboot the server after changes${RESET}"
+    echo -e "${YELLOW}• Reboot after changes${RESET}"
 fi
 
 echo
-echo -e "${CYAN}Tip:${RESET} Keep at least 100MB free in /boot to prevent kernel panic."
+echo -e "${CYAN}Tip:${RESET} Keep at least 250MB free in /boot to avoid kernel panic."
