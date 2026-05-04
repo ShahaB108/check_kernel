@@ -128,8 +128,7 @@ if [ "$RUNNING_OK" = true ] && version_ge "$DEFAULT_VERSION" "$MIN_KERNEL"; then
 else
     if [ "$RUNNING_OK" = false ]; then
         echo -e "${YELLOW}• Update kernel:${RESET}"
-        echo "  sudo dnf update kernel --enablerepo=*-testing"
-        echo "  CloudLinux: sudo dnf update 'kernel-lts*' --enablerepo=cloudlinux-updates-testing"
+        echo "  dnf update kernel --enablerepo=*-testing"
     fi
 
     if [ -n "$DEFAULT_VERSION" ] && ! version_ge "$DEFAULT_VERSION" "$MIN_KERNEL"; then
@@ -141,4 +140,4 @@ else
 fi
 
 echo
-echo -e "${CYAN}Tip:${RESET} Keep at least 250MB free in /boot to avoid kernel panic."
+echo -e "${CYAN}Tip:${RESET} Keep at least 100MB free in /boot to avoid kernel panic."
