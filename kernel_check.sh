@@ -1,47 +1,43 @@
 #!/bin/bash
-# CVE-2026-31431 (Copy Fail) Kernel Checker + Default Boot Check
+# CVE-2026-31431 Kernel Checker + Smart Recommendations
 # For AlmaLinux / CloudLinux
 
 echo "=== CVE-2026-31431 Kernel Checker + Boot Status ==="
 echo "Current time: $(date)"
 echo
 
-# Get running kernel
 RUNNING_KERNEL=$(uname -r)
 echo "Running kernel     : $RUNNING_KERNEL"
 
 # Detect OS
 if [ -f /etc/os-release ]; then
     . /etc/os-release
-    OS_NAME=${NAME,,}
     OS_VERSION=${VERSION_ID%%.*}
-else
-    echo "❌ Cannot detect OS"
-    exit 1
 fi
 
-echo "Detected OS        : $NAME $VERSION_ID"
-echo
-
-# Minimum patched kernels
+# Minimum patched version
 case $OS_VERSION in
     8)  MIN_KERNEL="4.18.0-553.121.1.el8_10" ;;
     9)  MIN_KERNEL="5.14.0-611.49.2.el9_7" ;;
     10) MIN_KERNEL="6.12.0-124.52.2.el10_1" ;;
-    *)  echo "⚠️ Unsupported version: $OS_VERSION"; exit 1 ;;
+    *)  MIN_KERNEL="0" ;;
 esac
 
+echo "Detected OS        : $NAME $VERSION_ID"
 echo "Required minimum   : $MIN_KERNEL"
 echo
 
-# Version comparison function
+# Version comparison
 version_ge() {
     printf '%s\n%s\n' "$2" "$1" | sort -V | head -n1 | grep -q "^$2$"
     return $?
 }
 
-# === Check Running Kernel ===
-if version_ge "$RUNNING_KERNEL" "$MIN_KERNEL"; then
+# Checks
+RUNNING_OK=$(version_ge "$RUNNING_KERNEL" "$MIN_KERNEL" && echo true || echo false)
+
+echo "=== Status ==="
+if [ "$RUNNING_OK" = true ]; then
     echo "✅ Running kernel is PATCHED"
 else
     echo "❌ Running kernel is VULNERABLE"
@@ -58,8 +54,7 @@ rpm -qa kernel --qf '%{VERSION}-%{RELEASE}.%{ARCH}\n' 2>/dev/null | sort -V | wh
 done
 
 echo
-echo "=== Default Boot Kernel (what will boot after reboot) ==="
-
+echo "=== Default Boot Kernel ==="
 if command -v grubby >/dev/null 2>&1; then
     DEFAULT_KERNEL=$(grubby --default-kernel 2>/dev/null)
     if [ -n "$DEFAULT_KERNEL" ]; then
@@ -70,28 +65,35 @@ if command -v grubby >/dev/null 2>&1; then
             echo "✅ Default boot kernel is PATCHED ✓"
         else
             echo "❌ Default boot kernel is VULNERABLE!"
-            echo "   You need to set the new kernel as default."
         fi
-    else
-        echo "⚠️ Could not detect default kernel via grubby"
     fi
-else
-    echo "⚠️ grubby command not found"
 fi
 
 echo
 echo "=== Recommendations ==="
-if ! version_ge "$RUNNING_KERNEL" "$MIN_KERNEL"; then
-    echo "• Update kernel first:"
-    echo "  dnf update kernel --enablerepo=*-testing"
-    echo "  or for CloudLinux LTS:"
-    echo "  dnf update 'kernel-lts*' --enablerepo=cloudlinux-updates-testing"
+
+if [ "$RUNNING_OK" = true ] && version_ge "$DEFAULT_VERSION" "$MIN_KERNEL"; then
+    echo "🎉 Your system is fully protected!"
+    echo "   No reboot needed."
+    echo
+    echo "Optional cleanup (remove old vulnerable kernels):"
+    echo "   sudo dnf remove \$(rpm -qa kernel | grep -E '4.18.0-553\.(83|89)')"
+else
+    if [ "$RUNNING_OK" = false ]; then
+        echo "• Update kernel:"
+        echo "  sudo dnf update kernel --enablerepo=*-testing"
+        echo "  or for CloudLinux:"
+        echo "  sudo dnf update 'kernel-lts*' --enablerepo=cloudlinux-updates-testing"
+    fi
+
+    if ! version_ge "$DEFAULT_VERSION" "$MIN_KERNEL"; then
+        echo "• Set newest kernel as default:"
+        echo "  sudo grubby --set-default=/boot/vmlinuz-\$(rpm -qa kernel --qf '%{VERSION}-%{RELEASE}' | sort -V | tail -1)"
+    fi
+
+    echo "• Reboot the server"
+    echo "• Run this script again after reboot to confirm"
 fi
 
-if [ -n "$DEFAULT_KERNEL" ] && ! version_ge "$DEFAULT_VERSION" "$MIN_KERNEL"; then
-    echo "• Set newest patched kernel as default:"
-    echo "  grubby --set-default=/boot/vmlinuz-\$(rpm -qa kernel --qf '%{VERSION}-%{RELEASE}' | sort -V | tail -1)"
-fi
-
-echo "• Then reboot"
-echo "• After reboot run this script again to verify"
+echo
+echo "Note: You can keep old kernels for fallback, or remove them for cleanup."
