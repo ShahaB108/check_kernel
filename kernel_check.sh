@@ -1,23 +1,21 @@
 #!/bin/bash
-# CVE-2026-31431 Kernel Checker + Boot Safety (Fixed)
+# CVE-2026-31431 Kernel Checker + Boot Safety (Stable Version)
 
 # Colors
 RED='\e[31m'
 GREEN='\e[32m'
 YELLOW='\e[33m'
 CYAN='\e[36m'
-BOLD='\e[1m'
 RESET='\e[0m'
 
 echo -e "${CYAN}=== CVE-2026-31431 Kernel Checker + Boot Safety ===${RESET}"
 echo -e "Current time : $(date)"
 echo
 
-# === Uptime Check (Fixed) ===
+# === Safe Uptime Check ===
 UPTIME=$(uptime -p)
-# Safely get uptime in days
-UPTIME_SEC=$(awk '{print int($1)}' /proc/uptime)
-UPTIME_DAYS=$((UPTIME_SEC / 86400))
+# Safe uptime days calculation
+UPTIME_DAYS=$(awk '{print int($1 / 86400)}' /proc/uptime)
 
 echo -e "${CYAN}Uptime           :${RESET} $UPTIME (${UPTIME_DAYS} days)"
 if [ "$UPTIME_DAYS" -ge 1 ]; then
@@ -74,7 +72,7 @@ done
 echo
 echo -e "${CYAN}=== /boot Disk Usage ===${RESET}"
 if mountpoint -q /boot 2>/dev/null; then
-    BOOT_USAGE=$(df /boot | awk 'NR==2 {print $5}' | sed 's/%//')
+    BOOT_USAGE=$(df /boot | awk 'NR==2 {gsub("%","",$5); print $5}')
     BOOT_AVAIL=$(df -h /boot | awk 'NR==2 {print $4}')
     BOOT_TOTAL=$(df -h /boot | awk 'NR==2 {print $2}')
     echo "Usage     : ${BOOT_USAGE}%   |   Free: ${BOOT_AVAIL} / ${BOOT_TOTAL}"
@@ -131,7 +129,7 @@ else
     if [ "$RUNNING_OK" = false ]; then
         echo -e "${YELLOW}• Update kernel:${RESET}"
         echo "  sudo dnf update kernel --enablerepo=*-testing"
-        echo "  CloudLinux LTS: sudo dnf update 'kernel-lts*' --enablerepo=cloudlinux-updates-testing"
+        echo "  CloudLinux: sudo dnf update 'kernel-lts*' --enablerepo=cloudlinux-updates-testing"
     fi
 
     if [ -n "$DEFAULT_VERSION" ] && ! version_ge "$DEFAULT_VERSION" "$MIN_KERNEL"; then
