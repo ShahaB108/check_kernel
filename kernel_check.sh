@@ -1,13 +1,31 @@
 #!/bin/bash
-# CVE-2026-31431 Kernel Checker + Boot Safety Features
-# Includes /boot usage and initramfs validation
+# CVE-2026-31431 Kernel Checker + Boot Safety (Colored + Uptime)
 
-echo "=== CVE-2026-31431 Kernel Checker + Boot Safety ==="
-echo "Current time: $(date)"
+# Colors
+RED='\e[31m'
+GREEN='\e[32m'
+YELLOW='\e[33m'
+CYAN='\e[36m'
+BOLD='\e[1m'
+RESET='\e[0m'
+
+echo -e "${CYAN}=== CVE-2026-31431 Kernel Checker + Boot Safety ===${RESET}"
+echo -e "Current time : $(date)"
+echo
+
+# Uptime Check
+UPTIME=$(uptime -p)
+UPTIME_SEC=$(awk '{print $1}' /proc/uptime)
+UPTIME_DAYS=$((UPTIME_SEC / 86400))
+
+echo -e "${CYAN}Uptime           :${RESET} $UPTIME (${UPTIME_DAYS} days)"
+if [ "$UPTIME_DAYS" -ge 1 ]; then
+    echo -e "${YELLOW}⚠️  Server has been running for more than 1 day.${RESET}"
+fi
 echo
 
 RUNNING_KERNEL=$(uname -r)
-echo "Running kernel     : $RUNNING_KERNEL"
+echo -e "${CYAN}Running kernel   :${RESET} $RUNNING_KERNEL"
 
 # Detect OS
 if [ -f /etc/os-release ]; then
@@ -23,11 +41,11 @@ case $OS_VERSION in
     *)  MIN_KERNEL="0" ;;
 esac
 
-echo "Detected OS        : $NAME $VERSION_ID"
-echo "Required minimum   : $MIN_KERNEL"
+echo -e "${CYAN}Detected OS      :${RESET} $NAME $VERSION_ID"
+echo -e "${CYAN}Required minimum :${RESET} $MIN_KERNEL"
 echo
 
-# Version comparison function
+# Version comparison
 version_ge() {
     printf '%s\n%s\n' "$2" "$1" | sort -V | head -n1 | grep -q "^$2$"
     return $?
@@ -35,101 +53,98 @@ version_ge() {
 
 RUNNING_OK=$(version_ge "$RUNNING_KERNEL" "$MIN_KERNEL" && echo true || echo false)
 
-echo "=== Status ==="
+echo -e "${CYAN}=== Status ===${RESET}"
 if [ "$RUNNING_OK" = true ]; then
-    echo "✅ Running kernel is PATCHED"
+    echo -e "${GREEN}✅ Running kernel is PATCHED${RESET}"
 else
-    echo "❌ Running kernel is VULNERABLE"
+    echo -e "${RED}❌ Running kernel is VULNERABLE${RESET}"
 fi
 
 echo
-echo "=== Installed Kernels ==="
+echo -e "${CYAN}=== Installed Kernels ===${RESET}"
 rpm -qa kernel --qf '%{VERSION}-%{RELEASE}.%{ARCH}\n' 2>/dev/null | sort -V | while read -r k; do
     if version_ge "$k" "$MIN_KERNEL"; then
-        echo "   ✅ $k"
+        echo -e "   ${GREEN}✅ $k${RESET}"
     else
-        echo "   ❌ $k  (vulnerable)"
+        echo -e "   ${RED}❌ $k  (vulnerable)${RESET}"
     fi
 done
 
 echo
-echo "=== /boot Disk Usage (Critical for Kernel Updates) ==="
+echo -e "${CYAN}=== /boot Disk Usage ===${RESET}"
 if mountpoint -q /boot; then
     BOOT_USAGE=$(df -h /boot | awk 'NR==2 {print $5}' | sed 's/%//')
     BOOT_AVAIL=$(df -h /boot | awk 'NR==2 {print $4}')
     BOOT_TOTAL=$(df -h /boot | awk 'NR==2 {print $2}')
-    echo "Usage : ${BOOT_USAGE}%   |   Available: ${BOOT_AVAIL} / ${BOOT_TOTAL}"
+    echo "Usage     : ${BOOT_USAGE}%   |   Free: ${BOOT_AVAIL} / ${BOOT_TOTAL}"
     
     if [ "$BOOT_USAGE" -ge 85 ]; then
-        echo "❌ CRITICAL: /boot is almost full! Risk of kernel panic."
+        echo -e "${RED}❌ CRITICAL: /boot is almost full!${RESET}"
     elif [ "$BOOT_USAGE" -ge 70 ]; then
-        echo "⚠️  Warning: /boot usage is high."
+        echo -e "${YELLOW}⚠️  Warning: /boot usage is high${RESET}"
     else
-        echo "✅ /boot has enough space."
+        echo -e "${GREEN}✅ /boot has enough space${RESET}"
     fi
 else
-    echo "⚠️  /boot is not a separate mountpoint (checking /)"
+    echo -e "${YELLOW}⚠️  /boot is not separate mount${RESET}"
     df -h /
 fi
 
 echo
-echo "=== Default Boot Kernel ==="
+echo -e "${CYAN}=== Default Boot Kernel ===${RESET}"
 if command -v grubby >/dev/null 2>&1; then
     DEFAULT_KERNEL=$(grubby --default-kernel 2>/dev/null)
     if [ -n "$DEFAULT_KERNEL" ]; then
         DEFAULT_VERSION=$(basename "$DEFAULT_KERNEL" | sed 's/vmlinuz-//')
-        echo "Default kernel     : $DEFAULT_VERSION"
+        echo "Default   : $DEFAULT_VERSION"
         
         if version_ge "$DEFAULT_VERSION" "$MIN_KERNEL"; then
-            echo "✅ Default boot kernel is PATCHED ✓"
+            echo -e "${GREEN}✅ Default boot kernel is PATCHED ✓${RESET}"
         else
-            echo "❌ Default boot kernel is VULNERABLE!"
+            echo -e "${RED}❌ Default boot kernel is VULNERABLE!${RESET}"
         fi
     fi
 fi
 
 echo
-echo "=== Initramfs Check for Newest Kernel ==="
+echo -e "${CYAN}=== Initramfs Check ===${RESET}"
 NEWEST_KERNEL=$(rpm -qa kernel --qf '%{VERSION}-%{RELEASE}.%{ARCH}\n' 2>/dev/null | sort -V | tail -1)
 if [ -n "$NEWEST_KERNEL" ]; then
-    echo "Newest installed   : $NEWEST_KERNEL"
-    if ls /boot/initramfs-${NEWEST_KERNEL}.img >/dev/null 2>&1; then
-        INITRAMFS_SIZE=$(ls -sh /boot/initramfs-${NEWEST_KERNEL}.img 2>/dev/null | awk '{print $1}')
-        echo "✅ Initramfs exists (${INITRAMFS_SIZE})"
+    echo "Newest kernel : $NEWEST_KERNEL"
+    if [ -f "/boot/initramfs-${NEWEST_KERNEL}.img" ]; then
+        SIZE=$(ls -sh "/boot/initramfs-${NEWEST_KERNEL}.img" 2>/dev/null | awk '{print $1}')
+        echo -e "${GREEN}✅ Initramfs exists (${SIZE})${RESET}"
     else
-        echo "❌ Initramfs missing for newest kernel!"
-        echo "   Run: sudo dracut -f /boot/initramfs-${NEWEST_KERNEL}.img ${NEWEST_KERNEL}"
+        echo -e "${RED}❌ Initramfs missing!${RESET}"
+        echo "   Fix with: sudo dracut -f /boot/initramfs-${NEWEST_KERNEL}.img ${NEWEST_KERNEL}"
     fi
 fi
 
 echo
-echo "=== Recommendations ==="
+echo -e "${CYAN}=== Recommendations ===${RESET}"
 
-if [ "$RUNNING_OK" = true ] && version_ge "$DEFAULT_VERSION" "$MIN_KERNEL"; then
-    echo "🎉 Your system is fully protected!"
-    echo "   No reboot needed at this moment."
+if [ "$RUNNING_OK" = true ] && version_ge "$DEFAULT_VERSION" "$MIN_KERNEL" && [ "$BOOT_USAGE" -lt 85 ]; then
+    echo -e "${GREEN}🎉 System is fully protected and safe!${RESET}"
+    echo "   No action or reboot needed right now."
 else
-    echo "• Update kernel:"
-    echo "  sudo dnf update kernel --enablerepo=*-testing"
-    echo "  CloudLinux LTS: sudo dnf update 'kernel-lts*' --enablerepo=cloudlinux-updates-testing"
-fi
+    if [ "$RUNNING_OK" = false ]; then
+        echo -e "${YELLOW}• Update the kernel:${RESET}"
+        echo "  sudo dnf update kernel --enablerepo=*-testing"
+        echo "  CloudLinux: sudo dnf update 'kernel-lts*' --enablerepo=cloudlinux-updates-testing"
+    fi
 
-if [ -n "$DEFAULT_VERSION" ] && ! version_ge "$DEFAULT_VERSION" "$MIN_KERNEL"; then
-    echo "• Set newest kernel as default:"
-    echo "  sudo grubby --set-default=/boot/vmlinuz-\$(rpm -qa kernel --qf '%{VERSION}-%{RELEASE}' | sort -V | tail -1)"
-fi
+    if ! version_ge "$DEFAULT_VERSION" "$MIN_KERNEL"; then
+        echo -e "${YELLOW}• Set newest kernel as default:${RESET}"
+        echo "  sudo grubby --set-default=/boot/vmlinuz-\$(rpm -qa kernel --qf '%{VERSION}-%{RELEASE}' | sort -V | tail -1)"
+    fi
 
-# Space warning
-if [ "$BOOT_USAGE" -ge 70 ]; then
-    echo "• ⚠️  Clean /boot before updating:"
-    echo "  sudo package-cleanup --oldkernels --count=2"
-    echo "  or manually remove old kernels"
-fi
+    if [ "$BOOT_USAGE" -ge 70 ]; then
+        echo -e "${RED}• Clean /boot before any update:${RESET}"
+        echo "  sudo package-cleanup --oldkernels --count=2"
+    fi
 
-if [ "$RUNNING_OK" = false ] || ! version_ge "$DEFAULT_VERSION" "$MIN_KERNEL"; then
-    echo "• Reboot after making changes"
-    echo "• Run this script again after reboot"
+    echo -e "${YELLOW}• Reboot the server after changes${RESET}"
 fi
 
 echo
-echo "Tip: Keep at least 200-300MB free in /boot to avoid kernel panic."
+echo -e "${CYAN}Tip:${RESET} Keep at least 100MB free in /boot to prevent kernel panic."
