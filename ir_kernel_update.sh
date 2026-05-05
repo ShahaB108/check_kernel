@@ -98,28 +98,9 @@ rpm -qa kernel --queryformat '%{VERSION}-%{RELEASE}.%{ARCH}\n' | sort -V | while
     fi
 done
 
-# Default boot kernel
-DEFAULT_KERNEL=$(grubby --default-kernel 2>/dev/null | sed 's|.*/||' | sed 's|\.x86_64||' || echo "unknown")
-echo ""
-echo "=== Default Boot Kernel ==="
-if [[ "$DEFAULT_KERNEL" == *"$MIN_VERSION"* ]]; then
-    echo "   ✅ $DEFAULT_KERNEL (PATCHED ✓)"
-else
-    echo "   ❌ $DEFAULT_KERNEL (VULNERABLE)"
-fi
+
 
 echo ""
-df -h /boot
-echo ""
-
-CURRENT_BASE=$(uname -r | cut -d. -f1-4)
-if [[ "$CURRENT_BASE" > "$MIN_VERSION" || "$CURRENT_BASE" == "$MIN_VERSION" ]]; then
-    echo "✅ Running kernel is PATCHED"
-else
-    echo "❌ Running kernel is VULNERABLE"
-fi
-
-echo ""
-echo "After reboot, check with:"
+echo "Before and after reboot, check with:"
 echo "curl -fsSL https://raw.githubusercontent.com/ShahaB108/CVE-2026-31431_Kernel_Checker/main/kernel_check.sh | bash"
 echo ""
