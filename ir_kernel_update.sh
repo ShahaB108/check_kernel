@@ -65,10 +65,10 @@ dnf remove -y --noautoremove kernel-devel kernel-headers \
 # ====================== UPDATE KERNEL ======================
 echo "=== Updating system and installing latest kernel ==="
 
-dnf update -y --refresh --disablerepo=* --enablerepo=*_iranserver
+dnf update -y --refresh --disablerepo=* --enablerepo=baseos_iranserver --enablerepo=epel_iranserver
 
 dnf install -y kernel kernel-core kernel-modules \
-    --disablerepo=* --enablerepo=*_iranserver
+    --disablerepo=* --enablerepo=baseos_iranserver
 
 echo "=== Update completed ==="
 
