@@ -57,15 +57,15 @@ EOF
 dnf clean all --enablerepo=* >/dev/null 2>&1
 
 # ====================== FIX CONFLICTS ======================
-echo "=== Removing old kernel devel/tools packages to avoid conflicts ==="
+#echo "=== Removing old kernel devel/tools packages to avoid conflicts ==="
 
-dnf remove -y --noautoremove kernel-devel kernel-headers \
-    kernel-tools kernel-tools-libs kernel-tools-libs-devel 2>/dev/null || true
+#dnf remove -y --noautoremove kernel-devel kernel-headers \
+#    kernel-tools kernel-tools-libs kernel-tools-libs-devel 2>/dev/null || true
 
 # ====================== UPDATE KERNEL ======================
 echo "=== Updating system and installing latest kernel ==="
 
-dnf update -y --refresh --disablerepo=* --enablerepo=baseos_iranserver --enablerepo=epel_iranserver
+#dnf update -y --refresh --disablerepo=* --enablerepo=baseos_iranserver --enablerepo=epel_iranserver
 
 dnf install -y kernel kernel-core kernel-modules \
     --disablerepo=* --enablerepo=baseos_iranserver
